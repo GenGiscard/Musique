@@ -184,6 +184,7 @@ pre.out{white-space:pre-wrap;word-break:break-word;background:var(--soft);border
 .tuto-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
 .tuto-bar b{font-family:var(--f-display)}
 .tuto-inner iframe{width:100%;height:100%;border:0;display:block}
+.edp{border-color:var(--accent);border-width:2px}
 /* Appréciations */
 .gen-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;background:var(--soft);border-radius:8px;padding:10px 12px}
 .gen-bar > div:first-child{display:grid}
@@ -283,7 +284,7 @@ pre.out{white-space:pre-wrap;word-break:break-word;background:var(--soft);border
   .app-row{grid-template-columns:1fr 84px;padding:14px 0}
   .gen-bar{flex-direction:column;align-items:stretch}
   .gen-bar .toolbar .btn{flex:1}
-  [data-act="ed-script"]{display:none}
+  [data-act="ed-script"],.ed-read-btn{display:none}
   .ed-help{display:none}
   /* Compte-rendu, actions */
   .profs{grid-template-columns:1fr}
@@ -475,12 +476,13 @@ function toast(msg){
   clearTimeout(toastT); toastT = setTimeout(()=>{ t.hidden = true; }, 2600);
 }
 function copyText(text, label){
-  const fallback = () => showModal(label||"Texte à copier", text);
+  const fallback = () => { showModal(label||"Texte à copier", text); return false; };
   try{
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(()=>toast("Copié dans le presse-papiers"), fallback);
-    } else fallback();
-  }catch(e){ fallback(); }
+      return navigator.clipboard.writeText(text).then(()=>{ toast("Copié dans le presse-papiers"); return true; }, fallback);
+    }
+  }catch(e){}
+  return Promise.resolve(fallback());
 }
 function download(name, text, mime){
   try{
@@ -518,6 +520,8 @@ function render(){
   const b = book();
   let html = "";
   if(b.example) html += `<div class="banner"><span><b>Classe d’exemple</b> : élèves fictifs pour découvrir l’outil.</span>${askBtn("clear-example","Effacer l’exemple","Effacer ces élèves fictifs ?","btn small")}</div>`;
+  html += edPendingPanel();
+  if(state.cur.view!=="techno" && state.cur.view!=="data") html += edReadHelp();
   const v = state.cur.view;
   html += v==="prep" ? viewPrep(b) : v==="live" ? viewLive(b) : v==="cr" ? viewCR(b) : v==="techno" ? viewTechno(b) : v==="actions" ? viewActions(b) : viewData(b);
   document.getElementById("main").innerHTML = html;
@@ -916,14 +920,16 @@ function viewTechno(b){
       <button class="btn small" data-act="view" data-v="data">Modifier la banque</button>
     </div>
     <div class="panel"><div class="toolbar" style="justify-content:space-between"><h2>${esc(state.cur.cls)} · ${done} / ${list.length} rédigées</h2>
-      <div class="toolbar"><button class="btn" data-act="copy-all-app">Copier toutes les appréciations</button><button class="btn primary" data-act="ed-script">Remplir École Directe</button></div></div>
-      ${ui.edHelp ? `<div class="ed-help"><div class="toolbar" style="justify-content:space-between"><b>Le script de la ${esc(state.cur.cls)} est copié</b><button class="btn small" data-act="ed-close">Fermer</button></div>
+      <div class="toolbar"><button class="btn" data-act="copy-all-app" title="Noms, notes et appréciations, à coller dans un tableur (pas dans la console)">Copier la liste pour un tableur</button><button class="btn ed-read-btn" data-act="ed-read" title="Lire les noms et les notes dans École Directe, sans fichier">Lire les notes dans École Directe</button><button class="btn primary" data-act="ed-script">Remplir École Directe</button></div></div>
+      ${edReadHelp()}
+      ${ui.edHelp ? `<div class="ed-help"><div class="toolbar" style="justify-content:space-between"><b>${ui.edCopied===false ? "Copie automatique refusée : copie le texte affiché avec Ctrl+C" : "Le script de la " + esc(state.cur.cls) + " est copié"}</b><span class="toolbar"><button class="btn small" data-act="ed-script">Recopier le script</button><button class="btn small" data-act="ed-close">Fermer</button></span></div>
         <ol>
           <li>Dans École Directe, ouvre <b>Carnet de notes</b>, ${esc(edLabel(state.cur.cls))}, ${esc(triLabel(state.cur.tri))}, onglet <b>Appréciations</b>.</li>
           <li>Appuie sur <b>F12</b>, puis ouvre l\u2019onglet <b>Console</b>.</li>
           <li>Colle avec <b>Ctrl+V</b> puis appuie sur <b>Entrée</b>. La première fois, le navigateur demande de taper <b>autoriser le collage</b> (ou <b>allow pasting</b>) avant de recoller.</li>
           <li>Vérifie les cases surlignées en vert, puis clique sur la <b>disquette</b> d\u2019École Directe pour enregistrer.</li>
         </ol>
+        <p class="hint">Ne copie rien d\u2019autre avant de coller dans la console. Si elle affiche « SyntaxError » ou « Unexpected identifier », c\u2019est qu\u2019elle a reçu autre chose que le script : clique sur <b>Recopier le script</b>, puis recolle.</p>
         ${ui.edMissing && ui.edMissing.length ? `<p class="warn">Sans appréciation dans l\u2019appli, leur case restera vide : ${esc(ui.edMissing.join(", "))}.</p>` : ""}
         ${ui.edOver ? `<p class="warn">${ui.edOver} appréciation${ui.edOver>1?"s dépassent":" dépasse"} 200 caractères : raccourcis-la avant, sinon École Directe risque de la couper.</p>` : ""}
       </div>` : ""}
@@ -979,14 +985,14 @@ const GEN = {
    "Les bases sont acquises, mais le niveau reste juste."
   ],
   [
-   "Résultats corrects en éducation musicale.",
-   "Trimestre correct en éducation musicale.",
+   "Résultats satisfaisants en éducation musicale.",
+   "Trimestre satisfaisant en éducation musicale.",
    "Résultats corrects, les bases sont acquises.",
-   "Ensemble correct, avec une marge de progression réelle.",
-   "Niveau correct en éducation musicale, sans plus.",
+   "Assez bons résultats en éducation musicale.",
+   "Ensemble satisfaisant, avec une marge de progression.",
    "L’essentiel est maîtrisé, il est possible de viser plus haut.",
    "Résultats assez satisfaisants en éducation musicale.",
-   "Acquis corrects dans l’ensemble."
+   "Trimestre honorable en éducation musicale."
   ],
   [
    "Bons résultats en éducation musicale.",
@@ -1054,15 +1060,15 @@ const GEN = {
    "Les résultats {deP} sont passables en éducation musicale."
   ],
   [
-   "{P} obtient des résultats corrects en éducation musicale.",
-   "Trimestre correct pour {P} en éducation musicale.",
-   "Les résultats {deP} sont corrects, les bases sont acquises.",
-   "Ensemble correct pour {P}, avec une marge de progression réelle.",
-   "Le niveau {deP} est correct en éducation musicale, sans plus.",
-   "{P} maîtrise l’essentiel, mais peut viser plus haut.",
+   "{P} obtient des résultats satisfaisants en éducation musicale.",
+   "Trimestre satisfaisant pour {P} en éducation musicale.",
+   "Les résultats {deP} sont corrects et les bases sont acquises.",
+   "{P} obtient d’assez bons résultats en éducation musicale.",
+   "Ensemble satisfaisant pour {P}, avec une marge de progression.",
+   "{P} maîtrise l’essentiel et peut viser plus haut.",
    "Résultats assez satisfaisants pour {P} en éducation musicale.",
-   "Les acquis {deP} sont corrects dans l’ensemble.",
-   "{P} réalise un trimestre correct, qui peut encore progresser."
+   "Les acquis {deP} sont satisfaisants dans l’ensemble.",
+   "{P} réalise un trimestre honorable en éducation musicale."
   ],
   [
    "{P} obtient de bons résultats en éducation musicale.",
@@ -1234,6 +1240,46 @@ const GEN = {
    "Il faut canaliser cette énergie pour progresser.",
    "Un meilleur comportement aiderait à franchir un cap."
   ]
+ },
+ "prog": {
+  "rnote": [
+   "{P} progresse nettement depuis le trimestre dernier.",
+   "Belle progression des résultats {deP} ce trimestre.",
+   "Les résultats {deP} sont en nette hausse : bravo.",
+   "Les efforts {deP} se traduisent par une vraie progression.",
+   "{P} a su améliorer ses résultats, c’est encourageant.",
+   "Nette progression {deP} depuis le trimestre précédent, à poursuivre."
+  ],
+  "anote": [
+   "Belle progression des résultats depuis le trimestre dernier.",
+   "Les résultats sont en nette hausse ce trimestre.",
+   "Net progrès par rapport au trimestre précédent, à poursuivre.",
+   "Les efforts fournis se traduisent par une vraie progression.",
+   "Progression encourageante des résultats ce trimestre."
+  ],
+  "rcomp": [
+   "{P} a nettement amélioré son attitude en classe.",
+   "Le comportement {deP} s’est nettement amélioré, c’est à saluer.",
+   "Les efforts {deP} sur l’attitude en classe sont visibles.",
+   "Net progrès dans l’attitude {deP} depuis le trimestre dernier.",
+   "{P} a fait de vrais efforts de comportement, à poursuivre."
+  ],
+  "acomp": [
+   "L’attitude en classe s’est nettement améliorée.",
+   "Le comportement en classe progresse nettement, c’est à saluer.",
+   "Les efforts sur l’attitude en classe sont visibles ce trimestre.",
+   "Net progrès dans le comportement depuis le trimestre dernier."
+  ],
+  "rboth": [
+   "{P} progresse dans ses résultats comme dans son attitude : bravo.",
+   "Beaux progrès {deP}, en résultats comme en comportement.",
+   "Les efforts {deP} paient : résultats et attitude progressent nettement."
+  ],
+  "aboth": [
+   "Beaux progrès ce trimestre, en résultats comme en comportement.",
+   "Résultats et attitude progressent nettement : les efforts paient.",
+   "Net progrès depuis le trimestre dernier, dans le travail comme dans l’attitude."
+  ]
  }
 };
 /* 0 : <8 · 1 : 8-10 · 2 : 10-12 juste · 3 : 12-14 correct · 4 : 14-16 bien · 5 : 16-18 très bien · 6 : 18+ excellent */
@@ -1244,14 +1290,27 @@ function nameForms(p){
   const v = /^[aeiouyhàâäéèêëîïôöùûüÿ]/i.test(p);
   return { P:p, deP:(v ? "d’" : "de ")+p };
 }
+/* Progrès depuis la période précédente : +1,5 point de moyenne, ou curseur baissé d'au moins un cran.
+   Seuls les progrès sont mentionnés ; la phrase remplace alors le conseil de fin. */
+const PREV_TRI = {T2:"T1", T3:"T2", S2:"S1"};
+const PROG_NOTE = 1.5;
+function progressOf(s, cls, tri){
+  const pb = PREV_TRI[tri] && peek(cls, PREV_TRI[tri]);
+  if(!pb || pb.example || !pb.students) return null;
+  const p = looseFind(pb, s.nom, s.prenom); if(!p) return null;
+  const note = s.techno!=null && p.techno!=null && s.techno - p.techno >= PROG_NOTE - 1e-9;
+  const comp = p.bav!=null && bavOf(p) - bavOf(s) >= 1;
+  return note && comp ? "both" : note ? "note" : comp ? "comp" : null;
+}
 function genKeys(s){
-  const lv = techLevel(s.techno), bv = bavOf(s);
+  const lv = techLevel(s.techno), bv = bavOf(s), an = isAnon(book());
   const band = lv>=5 ? "hi" : lv===4 ? "bon" : lv>=2 ? "mid" : "lo";
-  return [(isAnon(book()) ? "a" : "r")+lv, "c"+bv, "t"+band+(bv<=1?"good":"bad")];
+  const pr = progressOf(s, state.cur.cls, state.cur.tri);
+  return [(an ? "a" : "r")+lv, "c"+bv, pr ? "p"+(an ? "a" : "r")+pr : "t"+band+(bv<=1?"good":"bad")];
 }
 /* classe sans prénom : réglage de la classe, sinon d'office au lycée */
 function isAnon(b){ return b && b.anon!=null ? !!b.anon : /^(2nde|1re|Tle)/.test(state.cur.cls); }
-function genPool(k){ return k[0]==="a" ? GEN.resAnon[+k.slice(1)] : k[0]==="r" ? GEN.res[+k.slice(1)] : k[0]==="c" ? GEN.comp[+k.slice(1)] : GEN.tip[k.slice(1)]; }
+function genPool(k){ return k[0]==="a" ? GEN.resAnon[+k.slice(1)] : k[0]==="r" ? GEN.res[+k.slice(1)] : k[0]==="c" ? GEN.comp[+k.slice(1)] : k[0]==="p" ? GEN.prog[k.slice(1)] : GEN.tip[k.slice(1)]; }
 function usageMap(b, except){
   const used = {};
   b.students.forEach(x=>{
@@ -1528,6 +1587,101 @@ console.log(msg); alert(msg);
 })();`;
 }
 
+/* ---------- Lecture des notes dans École Directe (sans fichier) ---------- */
+/* Script à coller dans la console de la page Appréciations d'École Directe : il lit noms et notes,
+   puis les met dans le presse-papiers (fonction copy() de la console). */
+function edReadScript(){
+  return `/* Conseils de classe - lecture des notes dans École Directe (ne modifie rien) */
+(function(){
+var tas = Array.prototype.slice.call(document.querySelectorAll("textarea"));
+var out = [], seen = {};
+tas.forEach(function(ta){
+  var el = ta, row = null;
+  while(el.parentElement && el.parentElement !== document.body){
+    el = el.parentElement;
+    if(el.querySelectorAll("textarea").length > 1) break;
+    row = el;
+  }
+  if(!row || seen[row.__cdcId]) return;
+  var parts = [], w = document.createTreeWalker(row, NodeFilter.SHOW_TEXT), nd;
+  while((nd = w.nextNode())){ if(ta.compareDocumentPosition(nd) & Node.DOCUMENT_POSITION_PRECEDING) parts.push(nd.nodeValue); }
+  var before = parts.join(" ").replace(/\\s+/g, " ").replace(/Aucune [ée]valuation/gi, " ").trim();
+  var m = before.match(/(^|\\s)(\\d{1,2}(?:[.,]\\d{1,2})?)(?=\\s|$)/);
+  var name = (m ? before.slice(0, m.index) : before).replace(/[^A-Za-zÀ-ÿ' .\\-…]/g, " ").replace(/\\s+/g, " ").trim();
+  name = name.replace(/(\\s+(abs|absente?|disp|dispens[ée]e?|nn|ne|nr|inapte|ea))+$/i, "");
+  var tip = row.querySelector("[title]");
+  if(tip){ var t = (tip.getAttribute("title") || "").trim(); if(t.length > name.length && /^[A-ZÀ-Ý]/.test(t)) name = t; }
+  if(!name) return;
+  var note = m ? parseFloat(m[2].replace(",", ".")) : null;
+  if(note != null && note > 20) note = null;
+  out.push({nom: name, note: note});
+});
+var txt = document.body.innerText || "";
+var per = (txt.match(/p[ée]riode\\s*:\\s*([^\\n]+)/i) || [])[1] || "";
+var data = {source: "ecoledirecte", v: 1, tete: txt.slice(0, 700), periode: per, eleves: out};
+if(typeof copy === "function") copy(JSON.stringify(data));
+var msg = out.length + " élève(s) lu(s).\\n\\nRetournez dans l\\u2019appli Conseils de classe et appuyez sur Ctrl+V n\\u2019importe où sur la page.";
+console.log(msg); alert(msg);
+})();`;
+}
+function looseFind(b, nom, prenom){
+  const n = norm(nom), p = norm(prenom).replace(/[.…]+$/,"").trim();
+  const exact = b.students.filter(s=>norm(s.nom)===n && norm(s.prenom)===p);
+  if(exact.length===1) return exact[0];
+  if(p.length < 3) return null;
+  const close = b.students.filter(s=>norm(s.nom)===n && (norm(s.prenom).startsWith(p) || p.startsWith(norm(s.prenom))));
+  return close.length===1 ? close[0] : null;
+}
+function importEdData(d, cls, tri){
+  const b = book(cls, tri);
+  if(b.example){ b.students = []; b.example = false; b.bilan = ""; }
+  let added = 0, updated = 0;
+  d.eleves.forEach(x=>{
+    const sp = splitEleve(String(x.nom||""));
+    const prenom = sp.prenom.replace(/[.…]+$/,"").trim();
+    const o = looseFind(b, sp.nom, prenom);
+    if(o){ if(x.note!=null) o.techno = x.note; updated++; }
+    else { b.students.push(newStudent({nom:sp.nom.toUpperCase(), prenom, techno:x.note})); added++; }
+  });
+  state.cur.cls = cls; state.cur.tri = tri; state.cur.view = "techno";
+  ui.edPending = null; ui.edRead = false;
+  save(); render();
+  toast(`${cls} · ${triLabel(tri)} : ${updated} note${updated>1?"s":""} mise${updated>1?"s":""} à jour, ${added} élève${added>1?"s":""} ajouté${added>1?"s":""}`);
+}
+function handleEdPaste(text){
+  let d = null;
+  try{ d = JSON.parse(String(text||"").trim()); }catch(e){ return false; }
+  if(!d || d.source!=="ecoledirecte" || !Array.isArray(d.eleves)) return false;
+  if(!d.eleves.length){ toast("Aucun élève lu : ouvrez bien l\\u2019onglet Appréciations de la classe dans École Directe"); return true; }
+  const m = metaFrom((d.tete||"") + "\\n" + (d.periode||""));
+  ui.edPending = {d, cls: m.cls || state.cur.cls, tri: m.tri || state.cur.tri, sure: !!(m.cls && m.tri)};
+  render(); window.scrollTo && window.scrollTo(0,0);
+  return true;
+}
+function edPendingPanel(){
+  const p = ui.edPending; if(!p) return "";
+  const withNote = p.d.eleves.filter(x=>x.note!=null).length;
+  return `<div class="panel edp"><h2>Données lues dans École Directe</h2>
+    <p>${p.d.eleves.length} élève${p.d.eleves.length>1?"s":""}, dont ${withNote} avec une note. ${p.sure ? "Classe et période reconnues : vérifiez avant d\\u2019importer." : "Choisissez la classe et la période."}</p>
+    <div class="toolbar">
+      <select id="edpCls" aria-label="Classe">${classList().map(c=>`<option${c===p.cls?" selected":""}>${esc(c)}</option>`).join("")}${classList().includes(p.cls)?"":`<option selected>${esc(p.cls)}</option>`}</select>
+      <select id="edpTri" aria-label="Période">${TRIS.map(t=>`<option value="${t[0]}"${t[0]===p.tri?" selected":""}>${t[1]}</option>`).join("")}</select>
+      <button class="btn primary" data-act="edp-ok">Importer</button><button class="btn" data-act="edp-cancel">Annuler</button></div>
+    <p class="hint">Les notes sont mises à jour ; mentions, curseurs et appréciations déjà saisis sont conservés.</p>
+  </div>`;
+}
+function edReadHelp(){
+  if(!ui.edRead) return "";
+  return `<div class="ed-help"><div class="toolbar" style="justify-content:space-between"><b>${ui.edReadCopied===false ? "Copie automatique refusée : copie le texte affiché avec Ctrl+C" : "Le script de lecture est copié"}</b><span class="toolbar"><button class="btn small" data-act="ed-read">Recopier</button><button class="btn small" data-act="ed-read-close">Fermer</button></span></div>
+    <ol>
+      <li>Dans École Directe, ouvre <b>Carnet de notes</b>, la classe, la période, ta matière, onglet <b>Appréciations</b>.</li>
+      <li><b>F12</b>, onglet <b>Console</b>, <b>Ctrl+V</b> puis <b>Entrée</b>. Ce script lit seulement la page, il ne modifie rien.</li>
+      <li>Reviens ici et appuie sur <b>Ctrl+V</b> n\\u2019importe où sur la page.</li>
+    </ol>
+    <p class="hint">À refaire pour chaque classe. Pour la moyenne générale et les autres matières (préparation du conseil), le récapitulatif des moyennes reste nécessaire.</p>
+  </div>`;
+}
+
 /* ---------- Données ---------- */
 function viewData(b){
   const triOpts = (sel) => TRIS.map(t=>`<option value="${t[0]}"${t[0]===sel?" selected":""}>${t[1]}</option>`).join("");
@@ -1540,6 +1694,8 @@ function viewData(b){
         <select id="impCls">${classList().map(c=>`<option${c===state.cur.cls?" selected":""}>${esc(c)}</option>`).join("")}</select>
         <input type="text" id="impNew" placeholder="ou nouvelle classe (ex. 2nde 3)" aria-label="Nouvelle classe" style="max-width:190px">
         <select id="impTri" aria-label="Période">${triOpts(state.cur.tri)}</select></div>
+      <div class="toolbar"><button class="btn ed-read-btn" data-act="ed-read">Lire les notes dans École Directe</button><span class="hint">sans fichier : noms et notes de ta matière, classe par classe</span></div>
+      ${edReadHelp()}
       <label class="dropbox" for="csvFile"><b>Glissez vos fichiers Pronote ici</b><span>ou n\u2019importe où sur la page, plusieurs à la fois si besoin. Classe et trimestre sont lus dans le fichier.</span></label>
       <input type="file" id="csvFile" accept=".xlsx,.csv,.txt,.tsv" multiple aria-label="Fichier Excel ou CSV">
       <textarea id="csvPaste" placeholder="ou collez ici les lignes copiées depuis Pronote ou un tableur" aria-label="Coller les données"></textarea>
@@ -1944,11 +2100,17 @@ function act(el){
       const items = sorted(b.students,"nom").filter(x=>x.appTechno.trim());
       if(!items.length){ toast("Aucune appréciation à transférer"); break; }
       const over = items.filter(x=>x.appTechno.length>APP_LIMIT).length;
-      copyText(edScript(items), "Script École Directe");
+      ui.edCopied = null;
+      copyText(edScript(items), "Script École Directe : sélectionnez tout et copiez").then(ok=>{ ui.edCopied = ok; if(state.cur.view==="techno") render(); });
       ui.edHelp = true; ui.edOver = over;
       ui.edMissing = sorted(b.students,"nom").filter(x=>!x.appTechno.trim()).map(full); render();
       break; }
     case "ed-close": ui.edHelp = false; render(); break;
+    case "ed-read": ui.edRead = true; ui.edReadCopied = null; render();
+      copyText(edReadScript(), "Script de lecture : sélectionnez tout et copiez").then(ok=>{ ui.edReadCopied = ok; render(); }); break;
+    case "ed-read-close": ui.edRead = false; render(); break;
+    case "edp-ok": { const c = document.getElementById("edpCls").value, t = document.getElementById("edpTri").value; if(ui.edPending) importEdData(ui.edPending.d, c, t); break; }
+    case "edp-cancel": ui.edPending = null; render(); break;
     case "copy-all-app": copyText(sorted(b.students,"nom").map(s=>`${s.nom}\t${s.prenom}\t${fmt(s.techno)}\t${s.appTechno.replace(/[\t\r\n]+/g," ")}`).join("\n"), "Appréciations musique"); break;
     case "import-csv": {
       const fs = document.getElementById("csvFile").files, p = document.getElementById("csvPaste").value;
@@ -2094,6 +2256,18 @@ function showDrop(on){ const z = document.getElementById("dropzone"); if(z) z.hi
 document.addEventListener("dragenter", e=>{ if(!hasFiles(e)) return; e.preventDefault(); dragDepth++; showDrop(true); });
 document.addEventListener("dragover", e=>{ if(!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
 document.addEventListener("dragleave", e=>{ if(!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth-1); if(!dragDepth) showDrop(false); });
+/* retour sur l'onglet : on relit la base (notes envoyées depuis École Directe par le module Tampermonkey) */
+let lastFocusSync = 0;
+function syncOnReturn(){
+  if(document.visibilityState!=="visible" || !sync.id || sync.busy || sync.conflict || Date.now()-lastFocusSync < 4000) return;
+  lastFocusSync = Date.now(); reconcile(false);
+}
+document.addEventListener("visibilitychange", syncOnReturn);
+window.addEventListener("focus", syncOnReturn);
+document.addEventListener("paste", e=>{
+  const t = e.clipboardData && e.clipboardData.getData("text");
+  if(t && t.trim().startsWith('{"source":"ecoledirecte"') && handleEdPaste(t)) e.preventDefault();
+});
 document.addEventListener("drop", e=>{
   if(!hasFiles(e)) return;
   e.preventDefault(); dragDepth = 0; showDrop(false);
